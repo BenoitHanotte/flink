@@ -18,11 +18,12 @@
 
 package org.apache.flink.table.planner.plan.stream.sql
 
-import org.apache.flink.api.common.typeinfo.{BasicTypeInfo, SqlTimeTypeInfo, TypeInformation}
-import org.apache.flink.api.java.typeutils.RowTypeInfo
+import org.apache.flink.api.common.typeinfo.{BasicArrayTypeInfo, BasicTypeInfo, SqlTimeTypeInfo, TypeInformation}
+import org.apache.flink.api.java.typeutils.{GenericTypeInfo, RowTypeInfo}
 import org.apache.flink.table.api.{DataTypes, TableSchema, Types, ValidationException}
+import org.apache.flink.table.api.scala._
 import org.apache.flink.table.planner.expressions.utils.Func1
-import org.apache.flink.table.planner.utils.{DateTimeTestUtil, TableTestBase, TestFilterableTableSource, TestNestedProjectableTableSource, TestPartitionableSourceFactory, TestProjectableTableSource, TestTableSource, TestTableSourceWithTime}
+import org.apache.flink.table.planner.utils._
 import org.apache.flink.table.sources.TableSource
 import org.apache.flink.table.types.DataType
 import org.apache.flink.types.Row
@@ -31,7 +32,7 @@ import org.junit.{Before, Test}
 
 class TableSourceTest extends TableTestBase {
 
-  private val util = streamTestUtil()
+  private val util = scalaStreamTestUtil()
 
   private val tableSchema = TableSchema.builder().fields(
     Array("a", "b", "c"),
@@ -391,5 +392,38 @@ class TableSourceTest extends TableTestBase {
          |  tsv > TIMESTAMP '2017-02-03 14:25:02.000'
       """.stripMargin
     util.verifyPlan(sqlQuery)
+  }
+
+  @Test
+  def testTableToDataStreamGenericTypeInfo(): Unit = {
+    // create a simple Table with just one field of type array<string>
+    val tableTypeInfo = Types.ROW(
+      Array("my_arr"),
+      Array[TypeInformation[_]](BasicArrayTypeInfo.STRING_ARRAY_TYPE_INFO)
+    )
+    val tableSchema = TableSchema.fromTypeInfo(tableTypeInfo)
+
+    util.tableEnv.registerTableSource("MyTable", new TestTableSource(true, tableSchema))
+    val sqlQuery = "SELECT * FROM MyTable"
+
+    val table = util.tableEnv.sqlQuery(sqlQuery)
+    table.toAppendStream[Row](new GenericTypeInfo[Row](classOf[Row]))
+  }
+
+  @Test
+  def testTableToDataStreamRowTypeInfo(): Unit = {
+    // create a simple Table with just one field of type array<string>
+    val tableTypeInfo = Types.ROW(
+      Array("my_arr"),
+      Array[TypeInformation[_]](BasicArrayTypeInfo.STRING_ARRAY_TYPE_INFO)
+    )
+    val tableSchema = TableSchema.fromTypeInfo(tableTypeInfo)
+
+    util.tableEnv.registerTableSource("MyTable", new TestTableSource(true, tableSchema))
+    val sqlQuery = "SELECT * FROM MyTable"
+
+    val table = util.tableEnv.sqlQuery(sqlQuery)
+    val resRowType = Types.ROW(table.getSchema.getFieldTypes:_*)
+    table.toAppendStream[Row](resRowType)
   }
 }
