@@ -19,6 +19,10 @@
 package org.apache.flink.table.utils;
 
 import org.apache.flink.annotation.Internal;
+import org.apache.flink.api.common.typeinfo.BasicArrayTypeInfo;
+import org.apache.flink.api.common.typeinfo.PrimitiveArrayTypeInfo;
+import org.apache.flink.api.common.typeinfo.TypeInformation;
+import org.apache.flink.api.java.typeutils.ObjectArrayTypeInfo;
 import org.apache.flink.table.api.TableColumn;
 import org.apache.flink.table.api.TableSchema;
 import org.apache.flink.table.api.ValidationException;
@@ -27,6 +31,7 @@ import org.apache.flink.table.sources.DefinedRowtimeAttributes;
 import org.apache.flink.table.sources.RowtimeAttributeDescriptor;
 import org.apache.flink.table.sources.TableSource;
 import org.apache.flink.table.types.DataType;
+import org.apache.flink.table.types.logical.ArrayType;
 import org.apache.flink.table.types.logical.DecimalType;
 import org.apache.flink.table.types.logical.LegacyTypeInformationType;
 import org.apache.flink.table.types.logical.LogicalType;
@@ -35,6 +40,7 @@ import org.apache.flink.table.types.logical.LogicalTypeRoot;
 import org.apache.flink.table.types.logical.utils.LogicalTypeChecks;
 import org.apache.flink.table.types.logical.utils.LogicalTypeDefaultVisitor;
 import org.apache.flink.table.types.utils.DataTypeUtils;
+import org.apache.flink.table.types.utils.LegacyTypeInfoDataTypeConverter;
 import org.apache.flink.table.typeutils.TimeIndicatorTypeInfo;
 
 import java.util.Collections;
@@ -265,6 +271,39 @@ public final class TypeMappingUtils {
 						throw exceptionSupplier.apply(new ValidationException(
 							"Legacy decimal type can only be mapped to DECIMAL(38, 18)."));
 					}
+
+					return null;
+
+				} else if (other instanceof LegacyTypeInformationType && other.getTypeRoot() == LogicalTypeRoot.ARRAY) {
+					if (!(logicalFieldType instanceof ArrayType)) {
+						throw exceptionSupplier.apply(null);
+					}
+
+					TypeInformation physicalTypeInfo = ((LegacyTypeInformationType) other).getTypeInformation();
+
+					LogicalType physicalElementType;
+					if (physicalTypeInfo instanceof BasicArrayTypeInfo) {
+						physicalElementType = LegacyTypeInfoDataTypeConverter
+							.toDataType(((BasicArrayTypeInfo) physicalTypeInfo).getComponentInfo())
+							.getLogicalType();
+					}
+					else if (physicalTypeInfo instanceof PrimitiveArrayTypeInfo) {
+						physicalElementType = LegacyTypeInfoDataTypeConverter
+							.toDataType(((PrimitiveArrayTypeInfo) physicalTypeInfo).getComponentType())
+							.getLogicalType();
+					}
+					else if (physicalTypeInfo instanceof ObjectArrayTypeInfo) {
+						physicalElementType = LegacyTypeInfoDataTypeConverter
+							.toDataType(((ObjectArrayTypeInfo) physicalTypeInfo).getComponentInfo())
+							.getLogicalType();
+					}
+					else {
+						// should not happen unless a fourth array TypeInformation was introduced.
+						throw exceptionSupplier.apply(null);
+					}
+
+					LogicalType logicalElementType = ((ArrayType) logicalFieldType).getElementType();
+					checkIfCompatible(physicalElementType, logicalElementType, exceptionSupplier);
 
 					return null;
 				}
